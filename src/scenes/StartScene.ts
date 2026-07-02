@@ -19,14 +19,27 @@ export class StartScene extends Phaser.Scene {
             fontFamily: 'Arial',
         }).setOrigin(0.5);
 
-        this.add.rectangle(GAME_WIDTH / 2, 290, 280, 70, 0x333333)
-            .setStrokeStyle(3, 0xffffff);
+        const startButton = this.add.rectangle(GAME_WIDTH / 2, 290, 280, 70, 0x333333)
+            .setStrokeStyle(3, 0xffffff)
+            .setInteractive({ useHandCursor: true });
 
         this.add.text(GAME_WIDTH / 2, 290, '게임 시작', {
             fontSize: '32px',
             color: '#ffffff',
             fontFamily: 'Arial',
         }).setOrigin(0.5);
+
+        startButton.on('pointerdown', () => {
+            this.scene.start('GameScene');
+        });
+
+        startButton.on('pointerover', () => {
+            startButton.setFillStyle(0x555555);
+        });
+
+        startButton.on('pointerout', () => {
+            startButton.setFillStyle(0x333333);
+        });
 
         this.add.text(GAME_WIDTH / 2, 400, '↑ / Space : 점프    ↓ : 숙이기', {
             fontSize: '22px',
