@@ -8,7 +8,8 @@ export class GameScene extends Phaser.Scene {
     private gameSpeed = 300;
     private speedIncreaseRate = 5;
     private speedText!: Phaser.GameObjects.Text;
-    private obstacleSpawnDelay = 1800;
+    private maxObstacleSpawnDelay = 2000;
+    private minObstacleSpawnDelay = 900;
     private obstacleWidth = 70;
     private obstacleHeight = 60;
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -20,6 +21,12 @@ export class GameScene extends Phaser.Scene {
     private score = 0;
     private bestScore = 0;
     private isGameOver = false;
+    private obstacleDelayText!: Phaser.GameObjects.Text;
+    private isDucking = false;
+
+    private playerWidth = 56;
+    private playerHeight = 80;
+    private playerDuckHeight = 44;
 
     constructor() {
         super('GameScene');
@@ -52,6 +59,7 @@ export class GameScene extends Phaser.Scene {
         this.updateGameSpeed(delta);
         this.updateObstacleSpeed();
         this.handleJump();
+        this.handleDuck();
         this.moveGroundTiles(delta);
         this.removeOffscreenObstacles();
         this.updateScore(delta);
@@ -128,18 +136,18 @@ export class GameScene extends Phaser.Scene {
         const graphics = this.add.graphics();
 
         graphics.fillStyle(0xffffff, 1);
-        graphics.fillRect(0, 0, 56, 80);
+        graphics.fillRect(0, 0, this.playerWidth, this.playerHeight);
 
-        graphics.generateTexture('player-temp', 56, 80);
+        graphics.generateTexture('player-temp', this.playerWidth, this.playerHeight);
         graphics.destroy();
 
         this.player = this.physics.add.sprite(150, GAME_HEIGHT - 150, 'player-temp');
 
-        this.player.body!.setSize(48, 76);
-        this.player.body!.setOffset(4, 4);
-
         this.player.setCollideWorldBounds(true);
         this.player.setBounce(0);
+
+        this.player.body!.setSize(48, 76);
+        this.player.body!.setOffset(4, 4);
     }
 
     private createInput() {
@@ -164,9 +172,44 @@ export class GameScene extends Phaser.Scene {
         const isUpPressed = Phaser.Input.Keyboard.JustDown(this.cursors.up!);
         const isOnGround = this.player.body?.blocked.down; // 플레이어가 바닥에 닿아 있는지 확인해서 점프 가능 여부 판단
 
-        if ((isSpacePressed || isUpPressed) && isOnGround) {
+        if ((isSpacePressed || isUpPressed) && isOnGround && !this.isDucking) {
             this.player.setVelocityY(-600);
         }
+    }
+
+    private handleDuck() {
+        const isDownPressed = this.cursors.down?.isDown;
+        const isOnGround = this.player.body?.blocked.down;
+
+        if (isDownPressed && isOnGround && !this.isDucking) {
+            this.startDuck();
+        }
+
+        if ((!isDownPressed || !isOnGround) && this.isDucking) {
+            this.stopDuck();
+        }
+    }
+
+    private startDuck() {
+        this.isDucking = true;
+
+        this.player.setDisplaySize(this.playerWidth, this.playerDuckHeight);
+
+        this.player.body!.setSize(48, 40);
+        this.player.body!.setOffset(4, 40);
+
+        this.player.y += (this.playerHeight - this.playerDuckHeight) / 2;
+    }
+
+    private stopDuck() {
+        this.isDucking = false;
+
+        this.player.setDisplaySize(this.playerWidth, this.playerHeight);
+
+        this.player.body!.setSize(48, 76);
+        this.player.body!.setOffset(4, 4);
+
+        this.player.y -= (this.playerHeight - this.playerDuckHeight) / 2;
     }
 
     private createObstacleTexture() {
@@ -192,13 +235,18 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
-    private createObstacleTimer() { // 장애물 생성 타이머
-        this.obstacleTimer = this.time.addEvent({
-            delay: this.obstacleSpawnDelay,
-            callback: this.spawnObstacle,
-            callbackScope: this,
-            loop: true,
-        });
+    private createObstacleTimer() {
+        const nextDelay = this.getRandomObstacleSpawnDelay();
+
+        this.obstacleTimer = this.time.delayedCall(
+            nextDelay,
+            () => {
+                if (this.isGameOver) return;
+
+                this.spawnObstacle();
+                this.createObstacleTimer();
+            }
+        );
     }
 
     private spawnObstacle() {
@@ -273,5 +321,12 @@ export class GameScene extends Phaser.Scene {
             const obstacle = child as Phaser.Physics.Arcade.Sprite;
             obstacle.setVelocityX(-this.gameSpeed);
         });
+    }
+
+    private getRandomObstacleSpawnDelay() {
+        return Phaser.Math.Between(
+            this.minObstacleSpawnDelay,
+            this.maxObstacleSpawnDelay
+        );
     }
 }
