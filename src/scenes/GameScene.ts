@@ -1,5 +1,8 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../constants/gameConfig';
+import playerImage from '../assets/images/player.png';
+type ObstacleType = 'book' | 'slipper';
+type SlipperPattern = 'low' | 'middle' | 'high';
 
 export class GameScene extends Phaser.Scene {
     private player!: Phaser.Physics.Arcade.Sprite; //물리 적용 가능
@@ -24,9 +27,12 @@ export class GameScene extends Phaser.Scene {
     private obstacleDelayText!: Phaser.GameObjects.Text;
     private isDucking = false;
 
-    private playerWidth = 56;
-    private playerHeight = 80;
-    private playerDuckHeight = 44;
+    private playerWidth = 120;
+    private playerHeight = 170;
+    private playerDuckHeight = 90;
+
+    private minObstacleDistance = 380;
+    private groundTopY = GAME_HEIGHT - 100;
 
     constructor() {
         super('GameScene');
@@ -45,6 +51,7 @@ export class GameScene extends Phaser.Scene {
         this.createPlayer();
 
         this.createObstacleTexture();
+        this.createSlipperTexture();
         this.createObstacles();
 
         this.createInput();
@@ -88,13 +95,13 @@ export class GameScene extends Phaser.Scene {
     private createGround() {
         this.ground = this.add.rectangle(
             GAME_WIDTH / 2,
-            GAME_HEIGHT - 80,
+            this.groundTopY + 50,
             GAME_WIDTH,
-            40,
-            0x8b5a2b
+            100,
+            0x9b642d
         );
 
-        this.physics.add.existing(this.ground, true); // 바닥에 물리 충돌 적용
+        this.physics.add.existing(this.ground, true);
     }
 
     private createGroundTiles() {
@@ -133,21 +140,18 @@ export class GameScene extends Phaser.Scene {
     }
 
     private createPlayer() {
-        const graphics = this.add.graphics();
+        this.player = this.physics.add.sprite(140, this.groundTopY, 'player');
 
-        graphics.fillStyle(0xffffff, 1);
-        graphics.fillRect(0, 0, this.playerWidth, this.playerHeight);
-
-        graphics.generateTexture('player-temp', this.playerWidth, this.playerHeight);
-        graphics.destroy();
-
-        this.player = this.physics.add.sprite(150, GAME_HEIGHT - 150, 'player-temp');
+        this.player.setOrigin(0.5, 1);
+        this.player.setDisplaySize(this.playerWidth, this.playerHeight);
 
         this.player.setCollideWorldBounds(true);
         this.player.setBounce(0);
 
-        this.player.body!.setSize(48, 76);
-        this.player.body!.setOffset(4, 4);
+        this.setPlayerBodyStanding();
+
+        this.player.y = this.groundTopY;
+        this.player.setDepth(10);
     }
 
     private createInput() {
@@ -194,22 +198,44 @@ export class GameScene extends Phaser.Scene {
         this.isDucking = true;
 
         this.player.setDisplaySize(this.playerWidth, this.playerDuckHeight);
+        this.player.y = this.groundTopY;
 
-        this.player.body!.setSize(48, 40);
-        this.player.body!.setOffset(4, 40);
-
-        this.player.y += (this.playerHeight - this.playerDuckHeight) / 2;
+        this.setPlayerBodyDucking();
     }
 
     private stopDuck() {
         this.isDucking = false;
 
         this.player.setDisplaySize(this.playerWidth, this.playerHeight);
+        this.player.y = this.groundTopY;
 
-        this.player.body!.setSize(48, 76);
-        this.player.body!.setOffset(4, 4);
+        this.setPlayerBodyStanding();
+    }
 
-        this.player.y -= (this.playerHeight - this.playerDuckHeight) / 2;
+    private setPlayerBodyStanding() {
+        const body = this.player.body as Phaser.Physics.Arcade.Body;
+
+        const bodyWidth = this.player.width * 0.65;
+        const bodyHeight = this.player.height * 0.9;
+
+        body.setSize(bodyWidth, bodyHeight);
+        body.setOffset(
+            (this.player.width - bodyWidth) / 2,
+            this.player.height - bodyHeight
+        );
+    }
+
+    private setPlayerBodyDucking() {
+        const body = this.player.body as Phaser.Physics.Arcade.Body;
+
+        const bodyWidth = this.player.width * 0.7;
+        const bodyHeight = this.player.height * 0.45;
+
+        body.setSize(bodyWidth, bodyHeight);
+        body.setOffset(
+            (this.player.width - bodyWidth) / 2,
+            this.player.height - bodyHeight
+        );
     }
 
     private createObstacleTexture() {
@@ -250,7 +276,22 @@ export class GameScene extends Phaser.Scene {
     }
 
     private spawnObstacle() {
-        const groundTopY = GAME_HEIGHT - 100;
+        if (!this.canSpawnObstacle()) {
+            return;
+        }
+
+        const obstacleType = this.getRandomObstacleType();
+
+        if (obstacleType === 'book') {
+            this.spawnBookObstacle();
+            return;
+        }
+
+        this.spawnSlipperObstacle();
+    }
+
+    private spawnBookObstacle() { // 책 장애물 생성 함수 분리
+        const groundTopY = this.groundTopY;
 
         const obstacle = this.obstacles.create(
             GAME_WIDTH + 80,
@@ -262,6 +303,23 @@ export class GameScene extends Phaser.Scene {
         obstacle.setVelocityX(-this.gameSpeed);
 
         obstacle.body!.setSize(this.obstacleWidth - 10, this.obstacleHeight - 6);
+        obstacle.body!.setOffset(5, 6);
+    }
+
+    private spawnSlipperObstacle() {
+        const pattern = this.getRandomSlipperPattern();
+        const slipperY = this.getSlipperYByPattern(pattern);
+
+        const obstacle = this.obstacles.create(
+            GAME_WIDTH + 80,
+            slipperY,
+            'slipper-temp'
+        ) as Phaser.Physics.Arcade.Sprite;
+
+        obstacle.setOrigin(0.5);
+        obstacle.setVelocityX(-this.gameSpeed);
+
+        obstacle.body!.setSize(66, 30);
         obstacle.body!.setOffset(5, 6);
     }
 
@@ -328,5 +386,71 @@ export class GameScene extends Phaser.Scene {
             this.minObstacleSpawnDelay,
             this.maxObstacleSpawnDelay
         );
+    }
+
+    private createSlipperTexture() {
+        const graphics = this.add.graphics();
+
+        graphics.fillStyle(0xff6b81, 1);
+        graphics.fillRoundedRect(0, 8, 76, 28, 12);
+
+        graphics.fillStyle(0xffd1dc, 1);
+        graphics.fillRoundedRect(14, 0, 36, 16, 8);
+
+        graphics.fillStyle(0x8b2f45, 1);
+        graphics.fillRect(8, 30, 56, 6);
+
+        graphics.generateTexture('slipper-temp', 76, 42);
+        graphics.destroy();
+    }
+
+    private getRandomObstacleType(): ObstacleType {
+        const randomValue = Phaser.Math.Between(1, 100);
+
+        if (randomValue <= 60) {
+            return 'book';
+        }
+
+        return 'slipper';
+    }
+
+    private getRandomSlipperPattern(): SlipperPattern {
+        const randomValue = Phaser.Math.Between(1, 100);
+
+        if (randomValue <= 35) return 'low';
+        if (randomValue <= 60) return 'middle';
+        return 'high';
+    }
+
+    private getSlipperYByPattern(pattern: SlipperPattern) {
+        if (pattern === 'low') {
+            return GAME_HEIGHT - 115;
+        }
+
+        if (pattern === 'middle') {
+            return GAME_HEIGHT - 240;
+        }
+
+        return GAME_HEIGHT - 180;
+    }
+
+    private canSpawnObstacle() {
+        const obstacles = this.obstacles.getChildren() as Phaser.Physics.Arcade.Sprite[];
+
+        if (obstacles.length === 0) {
+            return true;
+        }
+
+        const rightMostObstacle = obstacles.reduce((rightMost, obstacle) => {
+            return obstacle.x > rightMost.x ? obstacle : rightMost;
+        });
+
+        const spawnX = GAME_WIDTH + 80;
+
+        return spawnX - rightMostObstacle.x >= this.minObstacleDistance;
+    }
+
+    preload() {
+        this.load.image('player', playerImage);
     }
 }
