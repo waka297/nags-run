@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../constants/gameConfig';
+import bookStackImage from '../assets/images/book_stack.png';
 import playerImage from '../assets/images/player.png';
+import slipperImage from '../assets/images/slipper.png';
 type ObstacleType = 'book' | 'slipper';
 type SlipperPattern = 'low' | 'middle' | 'high';
 
@@ -13,8 +15,8 @@ export class GameScene extends Phaser.Scene {
     private speedText!: Phaser.GameObjects.Text;
     private maxObstacleSpawnDelay = 2000;
     private minObstacleSpawnDelay = 900;
-    private obstacleWidth = 70;
-    private obstacleHeight = 60;
+    private obstacleWidth = 110;
+    private obstacleHeight = 95;
     private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
     private spaceKey!: Phaser.Input.Keyboard.Key;
     private scoreText!: Phaser.GameObjects.Text;
@@ -34,6 +36,9 @@ export class GameScene extends Phaser.Scene {
     private minObstacleDistance = 380;
     private groundTopY = GAME_HEIGHT - 100;
 
+    private slipperWidth = 86;
+    private slipperHeight = 48;
+
     constructor() {
         super('GameScene');
     }
@@ -50,8 +55,8 @@ export class GameScene extends Phaser.Scene {
         this.createGroundTiles();
         this.createPlayer();
 
-        this.createObstacleTexture();
-        this.createSlipperTexture();
+        //this.createObstacleTexture();
+        //this.createSlipperTexture();
         this.createObstacles();
 
         this.createInput();
@@ -215,8 +220,8 @@ export class GameScene extends Phaser.Scene {
     private setPlayerBodyStanding() {
         const body = this.player.body as Phaser.Physics.Arcade.Body;
 
-        const bodyWidth = this.player.width * 0.65;
-        const bodyHeight = this.player.height * 0.9;
+        const bodyWidth = this.player.width * 0.45;
+        const bodyHeight = this.player.height * 0.78;
 
         body.setSize(bodyWidth, bodyHeight);
         body.setOffset(
@@ -228,8 +233,8 @@ export class GameScene extends Phaser.Scene {
     private setPlayerBodyDucking() {
         const body = this.player.body as Phaser.Physics.Arcade.Body;
 
-        const bodyWidth = this.player.width * 0.7;
-        const bodyHeight = this.player.height * 0.45;
+        const bodyWidth = this.player.width * 0.55;
+        const bodyHeight = this.player.height * 0.38;
 
         body.setSize(bodyWidth, bodyHeight);
         body.setOffset(
@@ -290,20 +295,20 @@ export class GameScene extends Phaser.Scene {
         this.spawnSlipperObstacle();
     }
 
-    private spawnBookObstacle() { // 책 장애물 생성 함수 분리
-        const groundTopY = this.groundTopY;
-
+    private spawnBookObstacle() {
         const obstacle = this.obstacles.create(
             GAME_WIDTH + 80,
-            groundTopY,
-            'book-stack-temp'
+            this.groundTopY,
+            'book-stack'
         ) as Phaser.Physics.Arcade.Sprite;
 
         obstacle.setOrigin(0.5, 1);
+        obstacle.setDisplaySize(this.obstacleWidth, this.obstacleHeight);
         obstacle.setVelocityX(-this.gameSpeed);
+        obstacle.setDepth(5);
 
-        obstacle.body!.setSize(this.obstacleWidth - 10, this.obstacleHeight - 6);
-        obstacle.body!.setOffset(5, 6);
+        obstacle.body!.setSize(this.obstacleWidth * 0.8, this.obstacleHeight * 0.85);
+        obstacle.body!.setOffset(this.obstacleWidth * 0.1, this.obstacleHeight * 0.15);
     }
 
     private spawnSlipperObstacle() {
@@ -313,14 +318,16 @@ export class GameScene extends Phaser.Scene {
         const obstacle = this.obstacles.create(
             GAME_WIDTH + 80,
             slipperY,
-            'slipper-temp'
+            'slipper'
         ) as Phaser.Physics.Arcade.Sprite;
 
         obstacle.setOrigin(0.5);
+        obstacle.setDisplaySize(this.slipperWidth, this.slipperHeight);
         obstacle.setVelocityX(-this.gameSpeed);
+        obstacle.setDepth(5);
 
-        obstacle.body!.setSize(66, 30);
-        obstacle.body!.setOffset(5, 6);
+        obstacle.body!.setSize(this.slipperWidth * 0.8, this.slipperHeight * 0.7);
+        obstacle.body!.setOffset(this.slipperWidth * 0.1, this.slipperHeight * 0.15);
     }
 
     private removeOffscreenObstacles() {
@@ -424,14 +431,14 @@ export class GameScene extends Phaser.Scene {
 
     private getSlipperYByPattern(pattern: SlipperPattern) {
         if (pattern === 'low') {
-            return GAME_HEIGHT - 115;
+            return this.groundTopY - 20;
         }
 
         if (pattern === 'middle') {
-            return GAME_HEIGHT - 240;
+            return this.groundTopY - 175;
         }
 
-        return GAME_HEIGHT - 180;
+        return this.groundTopY - 95;
     }
 
     private canSpawnObstacle() {
@@ -452,5 +459,7 @@ export class GameScene extends Phaser.Scene {
 
     preload() {
         this.load.image('player', playerImage);
+        this.load.image('book-stack', bookStackImage);
+        this.load.image('slipper', slipperImage);
     }
 }
