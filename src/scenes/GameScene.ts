@@ -1,8 +1,12 @@
 import Phaser from 'phaser';
 import { GAME_WIDTH, GAME_HEIGHT } from '../constants/gameConfig';
 import bookStackImage from '../assets/images/book_stack.png';
-import playerImage from '../assets/images/player.png';
+import playerRun1Image from '../assets/images/player_run_1.png';
+import playerRun2Image from '../assets/images/player_run_2.png';
 import slipperImage from '../assets/images/slipper.png';
+import backgroundHallwayImage from '../assets/images/background_hallway.png';
+import groundImage from '../assets/images/ground.png';
+import playerDuckImage from '../assets/images/player_duck.png';
 type ObstacleType = 'book' | 'slipper';
 type SlipperPattern = 'low' | 'middle' | 'high';
 
@@ -31,13 +35,23 @@ export class GameScene extends Phaser.Scene {
 
     private playerWidth = 120;
     private playerHeight = 170;
-    private playerDuckHeight = 90;
+    private playerDuckWidth = 120;
+    private playerDuckHeight = 105;
 
     private minObstacleDistance = 380;
-    private groundTopY = GAME_HEIGHT - 100;
+    private groundTopY = GAME_HEIGHT - 95;
 
     private slipperWidth = 86;
     private slipperHeight = 48;
+
+    private backgrounds: Phaser.GameObjects.Image[] = []; // 배경 이미지 배열
+    private backgroundSpeedRatio = 0.15; // 배경 이동 속도 비율
+
+    private groundSprite!: Phaser.GameObjects.TileSprite;
+    private groundHeight = 28;
+
+    private playerNormalScaleX = 1;
+    private playerNormalScaleY = 1;
 
     constructor() {
         super('GameScene');
@@ -48,21 +62,20 @@ export class GameScene extends Phaser.Scene {
         this.isGameOver = false;
         this.bestScore = Number(localStorage.getItem('bestScore') ?? 0);
 
-        this.cameras.main.setBackgroundColor('#2b2b2b');
+        this.createBackground();
 
         this.createUI();
         this.createGround();
-        this.createGroundTiles();
+        //this.createGroundTiles();
+        this.createPlayerAnimations();
         this.createPlayer();
 
         //this.createObstacleTexture();
         //this.createSlipperTexture();
         this.createObstacles();
-
-        this.createInput();
-        this.createCollision();
-
         this.createObstacleTimer();
+        this.createCollision();
+        this.createInput();
     }
 
     update(_time: number, delta: number) {
@@ -72,9 +85,11 @@ export class GameScene extends Phaser.Scene {
         this.updateObstacleSpeed();
         this.handleJump();
         this.handleDuck();
-        this.moveGroundTiles(delta);
+        this.moveBackgrounds(delta);
+        this.moveGround(delta);
         this.removeOffscreenObstacles();
         this.updateScore(delta);
+        this.updatePlayerAnimation();
     }
 
     private createUI() {
@@ -90,20 +105,38 @@ export class GameScene extends Phaser.Scene {
             fontFamily: 'Arial',
         }).setOrigin(1, 0);
 
-        this.speedText = this.add.text(GAME_WIDTH / 2, 24, `속도 ${Math.floor(this.gameSpeed)}`, {
-            fontSize: '20px',
-            color: '#bbbbbb',
-            fontFamily: 'Arial',
-        }).setOrigin(0.5, 0);
+        this.speedText = this.add.text(
+            GAME_WIDTH / 2,
+            30,
+            `속도 ${Math.floor(this.gameSpeed)}`,
+            {
+                fontSize: '20px',
+                color: '#aaaaaa',
+            }
+        ).setOrigin(0.5);
+
+        this.speedText.setVisible(false);
     }
 
     private createGround() {
+        this.groundSprite = this.add.tileSprite(
+            GAME_WIDTH / 2,
+            this.groundTopY + this.groundHeight / 2,
+            GAME_WIDTH,
+            this.groundHeight,
+            'ground'
+        );
+
+        this.groundSprite.setDepth(1);
+        this.groundSprite.setAlpha(0.8);
+
         this.ground = this.add.rectangle(
             GAME_WIDTH / 2,
-            this.groundTopY + 50,
+            this.groundTopY + this.groundHeight / 2,
             GAME_WIDTH,
-            100,
-            0x9b642d
+            this.groundHeight,
+            0xffffff,
+            0
         );
 
         this.physics.add.existing(this.ground, true);
@@ -123,7 +156,7 @@ export class GameScene extends Phaser.Scene {
                 tileY,
                 tileWidth / 2,
                 tileHeight,
-                0xc48a4a
+                0xd09a5c
             );
 
             tile.setOrigin(0, 0.5);
@@ -145,10 +178,17 @@ export class GameScene extends Phaser.Scene {
     }
 
     private createPlayer() {
-        this.player = this.physics.add.sprite(140, this.groundTopY, 'player');
+        this.player = this.physics.add.sprite(
+            140,
+            this.groundTopY,
+            'player-run-1'
+        );
 
         this.player.setOrigin(0.5, 1);
         this.player.setDisplaySize(this.playerWidth, this.playerHeight);
+
+        this.playerNormalScaleX = this.player.scaleX;
+        this.playerNormalScaleY = this.player.scaleY;
 
         this.player.setCollideWorldBounds(true);
         this.player.setBounce(0);
@@ -157,6 +197,36 @@ export class GameScene extends Phaser.Scene {
 
         this.player.y = this.groundTopY;
         this.player.setDepth(10);
+        this.player.play('player-run');
+    }
+
+    private updatePlayerAnimation() {
+        const isOnGround = this.player.body?.blocked.down;
+
+        if (this.isDucking) {
+            this.player.anims.stop();
+
+            if (this.player.texture.key !== 'player-duck') {
+                this.player.setTexture('player-duck');
+            }
+
+            return;
+        }
+
+        if (!isOnGround) {
+            this.player.anims.stop();
+
+            if (this.player.texture.key !== 'player-run-1') {
+                this.player.setTexture('player-run-1');
+                this.setPlayerBodyStanding();
+            }
+
+            return;
+        }
+
+        if (!this.player.anims.isPlaying) {
+            this.player.play('player-run');
+        }
     }
 
     private createInput() {
@@ -170,9 +240,9 @@ export class GameScene extends Phaser.Scene {
         this.physics.add.overlap(
             this.player,
             this.obstacles,
-            this.handleGameOver,
-            undefined,
-            this
+            () => {
+                this.handleGameOver();
+            }
         );
     }
 
@@ -202,7 +272,14 @@ export class GameScene extends Phaser.Scene {
     private startDuck() {
         this.isDucking = true;
 
-        this.player.setDisplaySize(this.playerWidth, this.playerDuckHeight);
+        this.player.anims.stop();
+        this.player.setTexture('player-duck');
+
+        this.player.setScale(
+            this.playerNormalScaleX,
+            this.playerNormalScaleY
+        );
+
         this.player.y = this.groundTopY;
 
         this.setPlayerBodyDucking();
@@ -211,10 +288,17 @@ export class GameScene extends Phaser.Scene {
     private stopDuck() {
         this.isDucking = false;
 
-        this.player.setDisplaySize(this.playerWidth, this.playerHeight);
+        this.player.setTexture('player-run-1');
+
+        this.player.setScale(
+            this.playerNormalScaleX,
+            this.playerNormalScaleY
+        );
+
         this.player.y = this.groundTopY;
 
         this.setPlayerBodyStanding();
+        this.player.play('player-run');
     }
 
     private setPlayerBodyStanding() {
@@ -224,6 +308,7 @@ export class GameScene extends Phaser.Scene {
         const bodyHeight = this.player.height * 0.78;
 
         body.setSize(bodyWidth, bodyHeight);
+
         body.setOffset(
             (this.player.width - bodyWidth) / 2,
             this.player.height - bodyHeight
@@ -233,10 +318,11 @@ export class GameScene extends Phaser.Scene {
     private setPlayerBodyDucking() {
         const body = this.player.body as Phaser.Physics.Arcade.Body;
 
-        const bodyWidth = this.player.width * 0.55;
-        const bodyHeight = this.player.height * 0.38;
+        const bodyWidth = this.player.width * 0.65;
+        const bodyHeight = this.player.height * 0.35;
 
         body.setSize(bodyWidth, bodyHeight);
+
         body.setOffset(
             (this.player.width - bodyWidth) / 2,
             this.player.height - bodyHeight
@@ -355,6 +441,8 @@ export class GameScene extends Phaser.Scene {
         this.obstacleTimer?.remove(false);
         this.physics.pause();
 
+        this.player.anims.stop();
+        this.player.setTexture('player-run-1');
         this.player.setTint(0xff5555);
 
         this.cameras.main.shake(250, 0.01);
@@ -457,9 +545,73 @@ export class GameScene extends Phaser.Scene {
         return spawnX - rightMostObstacle.x >= this.minObstacleDistance;
     }
 
+    private createBackground() {
+        this.backgrounds = [];
+
+        for (let i = 0; i < 2; i += 1) {
+            const background = this.add.image(
+                GAME_WIDTH / 2 + GAME_WIDTH * i,
+                GAME_HEIGHT / 2,
+                'background-hallway'
+            );
+
+            background.setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
+            background.setDepth(0);
+
+            this.backgrounds.push(background);
+        }
+    }
+
+    private moveBackgrounds(delta: number) {
+        const moveDistance = this.gameSpeed * this.backgroundSpeedRatio * delta / 1000;
+
+        this.backgrounds.forEach((background) => {
+            background.x -= moveDistance;
+
+            if (background.x <= -GAME_WIDTH / 2) {
+                background.x += GAME_WIDTH * this.backgrounds.length;
+            }
+        });
+    }
+
+    private moveGround(delta: number) {
+        const moveDistance = this.gameSpeed * delta / 1000;
+        this.groundSprite.tilePositionX += moveDistance;
+    }
+
+    private createPlayerAnimations() {
+        if (this.anims.exists('player-run')) {
+            return;
+        }
+
+        this.anims.create({
+            key: 'player-run',
+            frames: [
+                { key: 'player-run-1' },
+                { key: 'player-run-2' },
+            ],
+            frameRate: 5,
+            repeat: -1,
+        });
+    }
+
+    private setPlayerHeightPreservingRatio(targetHeight: number) {
+        const textureWidth = this.player.width;
+        const textureHeight = this.player.height;
+
+        const scale = targetHeight / textureHeight;
+
+        this.player.setScale(scale);
+    }
+
     preload() {
-        this.load.image('player', playerImage);
+        this.load.image('player-run-1', playerRun1Image);
+        this.load.image('player-run-2', playerRun2Image);
+        this.load.image('player-duck', playerDuckImage);
+
         this.load.image('book-stack', bookStackImage);
         this.load.image('slipper', slipperImage);
+        this.load.image('background-hallway', backgroundHallwayImage);
+        this.load.image('ground', groundImage);
     }
 }

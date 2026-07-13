@@ -17,7 +17,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
         default: 'arcade',
         arcade: {
             gravity: { y: 1200, x: 0 },
-            debug: false, // 디버그 모드 활성화 여부
+            debug: true, // 디버그 모드 활성화 여부
         },
     },
     scale: {
