@@ -7,6 +7,8 @@ import slipperImage from '../assets/images/slipper.png';
 import backgroundHallwayImage from '../assets/images/background_hallway.png';
 import groundImage from '../assets/images/ground.png';
 import playerDuckImage from '../assets/images/player_duck.png';
+import playerJumpImage from '../assets/images/player_jump.png';
+import playerHitImage from '../assets/images/player_hit.png';
 type ObstacleType = 'book' | 'slipper';
 type SlipperPattern = 'low' | 'middle' | 'high';
 
@@ -53,6 +55,8 @@ export class GameScene extends Phaser.Scene {
     private playerNormalScaleX = 1;
     private playerNormalScaleY = 1;
 
+    private wasOnGround = true;
+
     constructor() {
         super('GameScene');
     }
@@ -83,13 +87,15 @@ export class GameScene extends Phaser.Scene {
 
         this.updateGameSpeed(delta);
         this.updateObstacleSpeed();
+
         this.handleJump();
         this.handleDuck();
+        this.updatePlayerAnimation();
+
         this.moveBackgrounds(delta);
         this.moveGround(delta);
         this.removeOffscreenObstacles();
         this.updateScore(delta);
-        this.updatePlayerAnimation();
     }
 
     private createUI() {
@@ -201,32 +207,61 @@ export class GameScene extends Phaser.Scene {
     }
 
     private updatePlayerAnimation() {
-        const isOnGround = this.player.body?.blocked.down;
+        const body = this.player.body as Phaser.Physics.Arcade.Body;
+        const isOnGround = body.blocked.down || body.touching.down;
 
         if (this.isDucking) {
             this.player.anims.stop();
 
             if (this.player.texture.key !== 'player-duck') {
                 this.player.setTexture('player-duck');
+
+                this.player.setScale(
+                    this.playerNormalScaleX,
+                    this.playerNormalScaleY
+                );
+
+                this.setPlayerBodyDucking();
             }
 
+            this.wasOnGround = true;
             return;
         }
 
         if (!isOnGround) {
             this.player.anims.stop();
 
-            if (this.player.texture.key !== 'player-run-1') {
-                this.player.setTexture('player-run-1');
+            if (this.player.texture.key !== 'player-jump') {
+                this.player.setTexture('player-jump');
+
+                this.player.setScale(
+                    this.playerNormalScaleX,
+                    this.playerNormalScaleY
+                );
+
                 this.setPlayerBodyStanding();
             }
 
+            this.wasOnGround = false;
             return;
+        }
+
+        if (!this.wasOnGround) {
+            this.player.setTexture('player-run-1');
+
+            this.player.setScale(
+                this.playerNormalScaleX,
+                this.playerNormalScaleY
+            );
+
+            this.setPlayerBodyStanding();
         }
 
         if (!this.player.anims.isPlaying) {
             this.player.play('player-run');
         }
+
+        this.wasOnGround = true;
     }
 
     private createInput() {
@@ -247,12 +282,31 @@ export class GameScene extends Phaser.Scene {
     }
 
     private handleJump() {
-        const isSpacePressed = Phaser.Input.Keyboard.JustDown(this.spaceKey);
-        const isUpPressed = Phaser.Input.Keyboard.JustDown(this.cursors.up!);
-        const isOnGround = this.player.body?.blocked.down; // 플레이어가 바닥에 닿아 있는지 확인해서 점프 가능 여부 판단
+        const isSpacePressed =
+            Phaser.Input.Keyboard.JustDown(this.spaceKey);
 
-        if ((isSpacePressed || isUpPressed) && isOnGround && !this.isDucking) {
+        const isUpPressed =
+            Phaser.Input.Keyboard.JustDown(this.cursors.up!);
+
+        const isOnGround =
+            this.player.body?.blocked.down;
+
+        if (
+            (isSpacePressed || isUpPressed) &&
+            isOnGround &&
+            !this.isDucking
+        ) {
             this.player.setVelocityY(-600);
+
+            this.player.anims.stop();
+            this.player.setTexture('player-jump');
+
+            this.player.setScale(
+                this.playerNormalScaleX,
+                this.playerNormalScaleY
+            );
+
+            this.setPlayerBodyStanding();
         }
     }
 
@@ -270,6 +324,13 @@ export class GameScene extends Phaser.Scene {
     }
 
     private startDuck() {
+        const body = this.player.body as Phaser.Physics.Arcade.Body;
+        const isOnGround = body.blocked.down || body.touching.down;
+
+        if (!isOnGround || this.isGameOver) {
+            return;
+        }
+
         this.isDucking = true;
 
         this.player.anims.stop();
@@ -439,15 +500,32 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.obstacleTimer?.remove(false);
+
+        // 피격 이미지 적용
+        this.player.anims.stop();
+        this.player.setTexture('player-hit');
+
+        this.player.setScale(
+            this.playerNormalScaleX,
+            this.playerNormalScaleY
+        );
+
+        this.setPlayerBodyStanding();
+
+        // 플레이어 즉시 정지
+        this.player.setVelocity(0, 0);
+        this.player.setAcceleration(0, 0);
+        this.player.setAngularVelocity(0);
+
+        // 게임 전체 물리 정지
         this.physics.pause();
 
-        this.player.anims.stop();
-        this.player.setTexture('player-run-1');
-        this.player.setTint(0xff5555);
+        // 피격 효과
+        this.player.setTint(0xff6666);
+        this.cameras.main.shake(200, 0.008);
 
-        this.cameras.main.shake(250, 0.01);
-
-        this.time.delayedCall(600, () => {
+        // 피격 이미지를 잠시 보여준 뒤 전환
+        this.time.delayedCall(800, () => {
             this.scene.start('GameOverScene', {
                 score: finalScore,
                 bestScore: this.bestScore,
@@ -608,10 +686,12 @@ export class GameScene extends Phaser.Scene {
         this.load.image('player-run-1', playerRun1Image);
         this.load.image('player-run-2', playerRun2Image);
         this.load.image('player-duck', playerDuckImage);
+        this.load.image('player-jump', playerJumpImage);
 
         this.load.image('book-stack', bookStackImage);
         this.load.image('slipper', slipperImage);
         this.load.image('background-hallway', backgroundHallwayImage);
         this.load.image('ground', groundImage);
+        this.load.image('player-hit', playerHitImage);
     }
 }
