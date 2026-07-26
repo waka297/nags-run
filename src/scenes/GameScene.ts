@@ -9,6 +9,13 @@ import groundImage from '../assets/images/ground.png';
 import playerDuckImage from '../assets/images/player_duck.png';
 import playerJumpImage from '../assets/images/player_jump.png';
 import playerHitImage from '../assets/images/player_hit.png';
+import jumpSound from '../assets/audio/jump.mp3';
+import hitSound from '../assets/audio/hit.mp3';
+import gameBgm from '../assets/audio/game-bgm.mp3';
+import slideSound from '../assets/audio/slide.mp3';
+import motherRun1Image from '../assets/images/mother_run_1.png';
+import motherRun2Image from '../assets/images/mother_run_2.png';
+import playerCaughtImage from '../assets/images/player-caught.png';
 type ObstacleType = 'book' | 'slipper';
 type SlipperPattern = 'low' | 'middle' | 'high';
 
@@ -57,6 +64,23 @@ export class GameScene extends Phaser.Scene {
 
     private wasOnGround = true;
 
+    private mother!: Phaser.GameObjects.Sprite;
+
+    private isMotherChasing = false;
+    private isHitCooldown = false;
+
+    private motherChaseTimer?: Phaser.Time.TimerEvent;
+
+    private motherChaseDuration = 5000;
+    private hitCooldownDuration = 700;
+
+    private jumpSound!: Phaser.Sound.BaseSound;
+    private hitSound!: Phaser.Sound.BaseSound;
+    private gameBgm!: Phaser.Sound.BaseSound;
+    private slideSound!: Phaser.Sound.BaseSound;
+
+    private caughtImage!: Phaser.GameObjects.Image;
+
     constructor() {
         super('GameScene');
     }
@@ -64,6 +88,8 @@ export class GameScene extends Phaser.Scene {
     create() {
         this.score = 0;
         this.isGameOver = false;
+        this.isMotherChasing = false;
+        this.isHitCooldown = false;
         this.bestScore = Number(localStorage.getItem('bestScore') ?? 0);
 
         this.createBackground();
@@ -72,7 +98,30 @@ export class GameScene extends Phaser.Scene {
         this.createGround();
         //this.createGroundTiles();
         this.createPlayerAnimations();
+        this.createMotherAnimations();
+
         this.createPlayer();
+        this.createMother();
+        this.createCaughtImage();
+
+        this.jumpSound = this.sound.add('jump-sound', {
+            volume: 0.35,
+        });
+
+        this.hitSound = this.sound.add('hit-sound', {
+            volume: 0.5,
+        });
+
+        this.gameBgm = this.sound.add('game-bgm', {
+            volume: 0.25,
+            loop: true,
+        });
+
+        this.slideSound = this.sound.add('slide-sound', {
+            volume: 0.3,
+        });
+
+        this.gameBgm.play();
 
         //this.createObstacleTexture();
         //this.createSlipperTexture();
@@ -80,6 +129,18 @@ export class GameScene extends Phaser.Scene {
         this.createObstacleTimer();
         this.createCollision();
         this.createInput();
+
+        this.events.once(
+            Phaser.Scenes.Events.SHUTDOWN,
+            () => {
+                if (this.gameBgm?.isPlaying) {
+                    this.gameBgm.stop();
+                }
+
+                this.motherChaseTimer?.remove(false);
+                this.tweens.killTweensOf(this.mother);
+            }
+        );
     }
 
     update(_time: number, delta: number) {
@@ -206,6 +267,32 @@ export class GameScene extends Phaser.Scene {
         this.player.play('player-run');
     }
 
+    private createMother() {
+        this.mother = this.add.sprite(
+            -40,
+            this.groundTopY,
+            'mother-run-1'
+        );
+
+        this.mother.setOrigin(0.5, 1);
+        this.mother.setDisplaySize(120, 180);
+        this.mother.setDepth(10);
+        this.mother.setVisible(false);
+    }
+
+    private createCaughtImage() {
+        this.caughtImage = this.add.image(
+            this.player.x,
+            this.groundTopY,
+            'player-caught'
+        );
+
+        this.caughtImage.setOrigin(0.5, 1);
+        this.caughtImage.setDisplaySize(240, 180);
+        this.caughtImage.setDepth(11);
+        this.caughtImage.setVisible(false);
+    }
+
     private updatePlayerAnimation() {
         const body = this.player.body as Phaser.Physics.Arcade.Body;
         const isOnGround = body.blocked.down || body.touching.down;
@@ -275,8 +362,44 @@ export class GameScene extends Phaser.Scene {
         this.physics.add.overlap(
             this.player,
             this.obstacles,
+            (
+                _player,
+                obstacle
+            ) => {
+                this.handleObstacleHit(
+                    obstacle as Phaser.Physics.Arcade.Sprite
+                );
+            }
+        );
+    }
+
+    private handleObstacleHit(
+        obstacle: Phaser.Physics.Arcade.Sprite
+    ) {
+        if (this.isGameOver || this.isHitCooldown) {
+            return;
+        }
+
+        this.isHitCooldown = true;
+
+        // 같은 장애물과 여러 프레임 연속 충돌하는 것을 방지
+        obstacle.destroy();
+
+        this.showHitEffect();
+
+        if (this.isMotherChasing) {
+            this.handleGameOver();
+            return;
+        }
+
+        this.startMotherChase();
+
+        this.time.delayedCall(
+            this.hitCooldownDuration,
             () => {
-                this.handleGameOver();
+                if (!this.isGameOver) {
+                    this.isHitCooldown = false;
+                }
             }
         );
     }
@@ -307,6 +430,8 @@ export class GameScene extends Phaser.Scene {
             );
 
             this.setPlayerBodyStanding();
+
+            this.jumpSound.play();
         }
     }
 
@@ -332,6 +457,8 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.isDucking = true;
+
+        this.slideSound.play();
 
         this.player.anims.stop();
         this.player.setTexture('player-duck');
@@ -491,6 +618,15 @@ export class GameScene extends Phaser.Scene {
         if (this.isGameOver) return;
 
         this.isGameOver = true;
+        this.isHitCooldown = true;
+
+        this.motherChaseTimer?.remove(false);
+        this.obstacleTimer?.remove(false);
+
+
+        this.mother.anims.stop();
+        this.gameBgm.stop();
+        this.hitSound.play();
 
         const finalScore = Math.floor(this.score);
 
@@ -524,14 +660,34 @@ export class GameScene extends Phaser.Scene {
         this.player.setTint(0xff6666);
         this.cameras.main.shake(200, 0.008);
 
-        // 피격 이미지를 잠시 보여준 뒤 전환
-        this.time.delayedCall(800, () => {
-            this.scene.start('GameOverScene', {
-                score: finalScore,
-                bestScore: this.bestScore,
-            });
-        });
+        this.moveMotherToPlayer();
     }
+
+    private moveMotherToPlayer() {
+    this.mother.setVisible(true);
+    this.mother.play('mother-run', true);
+
+    this.tweens.add({
+        targets: this.mother,
+        x: this.player.x - 20,
+        duration: 700,
+        ease: 'Linear',
+
+        onComplete: () => {
+            this.player.setVisible(false);
+            this.mother.setVisible(false);
+
+            this.caughtImage.setVisible(true);
+
+            this.time.delayedCall(1000, () => {
+                this.scene.start('GameOverScene', {
+                    score: Math.floor(this.score),
+                    bestScore: this.bestScore,
+                });
+            });
+        },
+    });
+}
 
     private updateScore(delta: number) {
         this.score += delta * 0.01;
@@ -601,10 +757,10 @@ export class GameScene extends Phaser.Scene {
         }
 
         if (pattern === 'middle') {
-            return this.groundTopY - 175;
+            return this.groundTopY - 120;
         }
 
-        return this.groundTopY - 95;
+        return this.groundTopY - 190;
     }
 
     private canSpawnObstacle() {
@@ -682,7 +838,87 @@ export class GameScene extends Phaser.Scene {
         this.player.setScale(scale);
     }
 
+    private showHitEffect() {
+        this.hitSound.play();
+
+        this.player.setTint(0xff8888);
+        this.cameras.main.shake(150, 0.005);
+
+        this.time.delayedCall(250, () => {
+            if (!this.isGameOver) {
+                this.player.clearTint();
+            }
+        });
+    }
+
+    private startMotherChase() {
+        this.isMotherChasing = true;
+
+        this.mother.setVisible(true);
+        this.mother.play('mother-run');
+        this.mother.setAlpha(1);
+
+        this.mother.x = -40;
+
+        this.tweens.add({
+            targets: this.mother,
+            x: 35,
+            duration: 350,
+            ease: 'Back.Out',
+        });
+
+        this.motherChaseTimer?.remove(false);
+
+        this.motherChaseTimer = this.time.delayedCall(
+            this.motherChaseDuration,
+            () => {
+                this.stopMotherChase();
+            }
+        );
+    }
+
+    private stopMotherChase() {
+        if (this.isGameOver) {
+            return;
+        }
+
+        this.isMotherChasing = false;
+
+        this.tweens.add({
+            targets: this.mother,
+            x: -60,
+            alpha: 0,
+            duration: 300,
+
+            onComplete: () => {
+                this.mother.anims.stop();
+                this.mother.setVisible(false);
+                this.mother.setAlpha(1);
+            }
+        });
+    }
+    
+    private createMotherAnimations() {
+        if (this.anims.exists('mother-run')) {
+            return;
+        }
+
+        this.anims.create({
+            key: 'mother-run',
+            frames: [
+                { key: 'mother-run-1' },
+                { key: 'mother-run-2' },
+            ],
+            frameRate: 5,
+            repeat: -1,
+        });
+    }
+
     preload() {
+        this.load.audio('game-bgm', gameBgm);
+        this.load.audio('jump-sound', jumpSound);
+        this.load.audio('hit-sound', hitSound);
+
         this.load.image('player-run-1', playerRun1Image);
         this.load.image('player-run-2', playerRun2Image);
         this.load.image('player-duck', playerDuckImage);
@@ -693,5 +929,10 @@ export class GameScene extends Phaser.Scene {
         this.load.image('background-hallway', backgroundHallwayImage);
         this.load.image('ground', groundImage);
         this.load.image('player-hit', playerHitImage);
+        this.load.image('mother-run-1', motherRun1Image);
+        this.load.image('mother-run-2', motherRun2Image);
+        this.load.image('player-caught', playerCaughtImage);
+
+        this.load.audio('slide-sound', slideSound);
     }
 }
