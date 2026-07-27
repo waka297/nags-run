@@ -664,30 +664,89 @@ export class GameScene extends Phaser.Scene {
     }
 
     private moveMotherToPlayer() {
-    this.mother.setVisible(true);
-    this.mother.play('mother-run', true);
+        const finalScore = Math.floor(this.score);
 
-    this.tweens.add({
-        targets: this.mother,
-        x: this.player.x - 20,
-        duration: 700,
-        ease: 'Linear',
+        const caughtScaleX = this.caughtImage.scaleX;
+        const caughtScaleY = this.caughtImage.scaleY;
 
-        onComplete: () => {
-            this.player.setVisible(false);
-            this.mother.setVisible(false);
+        this.mother.setVisible(true);
+        this.mother.play('mother-run', true);
 
-            this.caughtImage.setVisible(true);
+        this.tweens.add({
+            targets: this.mother,
+            x: this.player.x - 20,
+            duration: 700,
+            ease: 'Linear',
 
-            this.time.delayedCall(1000, () => {
+            onComplete: () => {
+                this.mother.anims.stop();
+
+                this.player.setVisible(false);
+                this.mother.setVisible(false);
+
+                this.caughtImage
+                    .setPosition(this.player.x, this.groundTopY)
+                    .setVisible(true)
+                    .setAlpha(0)
+                    .setScale(
+                        caughtScaleX * 0.85,
+                        caughtScaleY * 0.85
+                    );
+
+                // 잡힌 이미지 등장
+                this.tweens.add({
+                    targets: this.caughtImage,
+                    alpha: 1,
+                    scaleX: caughtScaleX,
+                    scaleY: caughtScaleY,
+                    duration: 250,
+                    ease: 'Back.Out',
+                });
+
+                // 잡힌 장면으로 카메라 이동
+                this.cameras.main.pan(
+                    this.caughtImage.x,
+                    this.caughtImage.y - 80,
+                    1800,
+                    'Sine.easeInOut'
+                );
+
+                // 서서히 확대
+                this.cameras.main.zoomTo(
+                    1.15,
+                    1800,
+                    'Sine.easeInOut'
+                );
+
+                // 확대가 끝나면 암전
+                this.time.delayedCall(1800, () => {
+                    this.cameras.main.fadeOut(
+                        500,
+                        0,
+                        0,
+                        0
+                    );
+                });
+            },
+        });
+
+        this.cameras.main.once(
+            Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+            () => {
+                // 다음 플레이를 위해 카메라 원상복구
+                this.cameras.main.setZoom(1);
+                this.cameras.main.centerOn(
+                    GAME_WIDTH / 2,
+                    GAME_HEIGHT / 2
+                );
+
                 this.scene.start('GameOverScene', {
-                    score: Math.floor(this.score),
+                    score: finalScore,
                     bestScore: this.bestScore,
                 });
-            });
-        },
-    });
-}
+            }
+        );
+    }
 
     private updateScore(delta: number) {
         this.score += delta * 0.01;
