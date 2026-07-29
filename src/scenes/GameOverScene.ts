@@ -42,7 +42,7 @@ export class GameOverScene extends Phaser.Scene {
             .setPadding(0, 20, 0, 20)
             .setDepth(10);
 
-        this.add.text(centerX, 230, `최종 점수 ${this.score}`, {
+        const scoreText = this.add.text(centerX, 230, '최종 점수 0', {
             fontSize: '28px',
             color: '#ffffff',
             fontStyle: 'bold',
@@ -51,14 +51,76 @@ export class GameOverScene extends Phaser.Scene {
             .setPadding(0, 12, 0, 12)
             .setDepth(10);
 
-        this.add.text(centerX, 280, `최고 점수 ${this.bestScore}`, {
-            fontSize: '28px',
-            color: '#ffd36a',
-            fontStyle: 'bold',
-        })
+        const scoreCounter = { value: 0 };
+
+        this.tweens.addCounter({
+            from: 0,
+            to: this.score,
+            duration: 900,
+            ease: 'Cubic.Out',
+
+            onUpdate: (tween) => {
+                const value = tween.getValue() ?? 0;
+
+                scoreText.setText(
+                    `최종 점수 ${Math.floor(value)}`
+                );
+            }
+        });
+
+        const bestScoreText = this.add.text(
+            centerX,
+            280,
+            '최고 점수 0',
+            {
+                fontSize: '28px',
+                color: '#ffd36a',
+                fontStyle: 'bold',
+            }
+        )
             .setOrigin(0.5)
             .setPadding(0, 12, 0, 12)
             .setDepth(10);
+
+        this.tweens.addCounter({
+            from: 0,
+            to: this.bestScore,
+            duration: 900,
+            ease: 'Cubic.Out',
+
+            onUpdate: (tween) => {
+                const value = tween.getValue() ?? 0;
+
+                bestScoreText.setText(
+                    `최고 점수 ${Math.floor(value)}`
+                );
+            }
+        });
+
+        if (this.score === this.bestScore) {
+            const newBest = this.add.text(
+                centerX,
+                315,
+                '★ NEW BEST! ★',
+                {
+                    fontSize: '24px',
+                    color: '#ffd700',
+                    fontStyle: 'bold',
+                }
+            )
+                .setOrigin(0.5)
+                .setAlpha(0);
+
+            this.tweens.add({
+                targets: newBest,
+                alpha: 1,
+                y: 305,
+                duration: 500,
+                ease: 'Back.Out',
+                yoyo: true,
+                repeat: -1
+            });
+        }
 
         this.createButton(centerX, 350, '다시 시작', () => {
             this.scene.start('GameScene')
@@ -66,6 +128,14 @@ export class GameOverScene extends Phaser.Scene {
 
         this.createButton(centerX, 430, '처음으로', () => {
             this.scene.start('StartScene');
+        });
+
+        this.input.keyboard?.once('keydown-SPACE', () => {
+            this.scene.start('GameScene');
+        });
+
+        this.input.keyboard?.once('keydown-R', () => {
+            this.scene.start('GameScene');
         });
     }
 
@@ -188,7 +258,18 @@ export class GameOverScene extends Phaser.Scene {
             buttonBg.setFillStyle(0x111827, 0.75);
         });
 
-        buttonBg.on('pointerdown', onClick);
+        buttonBg.on('pointerdown', () => {
+
+            this.tweens.add({
+                targets: [buttonBg, buttonText],
+                scaleX: 0.96,
+                scaleY: 0.96,
+                duration: 70,
+                yoyo: true
+            });
+
+            onClick();
+        });
 
         return { buttonBg, buttonText };
     }

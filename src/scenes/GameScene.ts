@@ -155,8 +155,8 @@ export class GameScene extends Phaser.Scene {
 
         this.moveBackgrounds(delta);
         this.moveGround(delta);
+        this.checkPassedObstacles();
         this.removeOffscreenObstacles();
-        this.updateScore(delta);
     }
 
     private createUI() {
@@ -581,8 +581,17 @@ export class GameScene extends Phaser.Scene {
         obstacle.setVelocityX(-this.gameSpeed);
         obstacle.setDepth(5);
 
-        obstacle.body!.setSize(this.obstacleWidth * 0.8, this.obstacleHeight * 0.85);
-        obstacle.body!.setOffset(this.obstacleWidth * 0.1, this.obstacleHeight * 0.15);
+        obstacle.body!.setSize(
+            this.obstacleWidth * 0.8,
+            this.obstacleHeight * 0.85
+        );
+
+        obstacle.body!.setOffset(
+            this.obstacleWidth * 0.1,
+            this.obstacleHeight * 0.15
+        );
+
+        obstacle.setData('passed', false);
     }
 
     private spawnSlipperObstacle() {
@@ -596,12 +605,25 @@ export class GameScene extends Phaser.Scene {
         ) as Phaser.Physics.Arcade.Sprite;
 
         obstacle.setOrigin(0.5);
-        obstacle.setDisplaySize(this.slipperWidth, this.slipperHeight);
+        obstacle.setDisplaySize(
+            this.slipperWidth,
+            this.slipperHeight
+        );
+
         obstacle.setVelocityX(-this.gameSpeed);
         obstacle.setDepth(5);
 
-        obstacle.body!.setSize(this.slipperWidth * 0.8, this.slipperHeight * 0.7);
-        obstacle.body!.setOffset(this.slipperWidth * 0.1, this.slipperHeight * 0.15);
+        obstacle.body!.setSize(
+            this.slipperWidth * 0.8,
+            this.slipperHeight * 0.7
+        );
+
+        obstacle.body!.setOffset(
+            this.slipperWidth * 0.1,
+            this.slipperHeight * 0.15
+        );
+
+        obstacle.setData('passed', false);
     }
 
     private removeOffscreenObstacles() {
@@ -611,6 +633,83 @@ export class GameScene extends Phaser.Scene {
             if (obstacle.x < -100) {
                 obstacle.destroy();
             }
+        });
+    }
+
+    private checkPassedObstacles() {
+        if (this.isGameOver) {
+            return;
+        }
+
+        this.obstacles.getChildren().forEach(
+            (child: Phaser.GameObjects.GameObject) => {
+                const obstacle =
+                    child as Phaser.Physics.Arcade.Sprite;
+
+                if (!obstacle.active) {
+                    return;
+                }
+
+                const hasPassed =
+                    obstacle.getData('passed') as boolean;
+
+                const obstacleRight =
+                    obstacle.x +
+                    obstacle.displayWidth *
+                    (1 - obstacle.originX);
+
+                if (
+                    !hasPassed &&
+                    obstacleRight < this.player.x
+                ) {
+                    obstacle.setData('passed', true);
+
+                    const scoreGain =
+                        Math.round(this.gameSpeed / 30);
+
+                    this.score += scoreGain;
+
+                    this.scoreText.setText(
+                        `점수 ${this.score}`
+                    );
+
+                    this.showPassScoreEffect(scoreGain);
+                }
+            }
+        );
+    }
+
+    private showPassScoreEffect(amount: number) {
+        const effectText = this.add.text(
+            this.player.x,
+            this.player.y - this.player.displayHeight - 10,
+            `+${amount}`,
+            {
+                fontSize: '24px',
+                color: '#ffffff',
+                fontFamily: 'Arial',
+                fontStyle: 'bold',
+                stroke: '#000000',
+                strokeThickness: 4,
+            }
+        );
+
+        effectText
+            .setOrigin(0.5)
+            .setDepth(100);
+
+        this.tweens.add({
+            targets: effectText,
+            y: effectText.y - 40,
+            alpha: 0,
+            scaleX: 1.2,
+            scaleY: 1.2,
+            duration: 600,
+            ease: 'Cubic.Out',
+
+            onComplete: () => {
+                effectText.destroy();
+            },
         });
     }
 
@@ -660,7 +759,23 @@ export class GameScene extends Phaser.Scene {
         this.player.setTint(0xff6666);
         this.cameras.main.shake(200, 0.008);
 
-        this.moveMotherToPlayer();
+        // 공중에서 맞았다면 바닥으로 내려온 뒤 엄마 이동
+        const targetY = this.groundTopY;
+
+        if (this.player.y < targetY) {
+            this.tweens.add({
+                targets: this.player,
+                y: targetY,
+                duration: 250,
+                ease: 'Quad.In',
+
+                onComplete: () => {
+                    this.moveMotherToPlayer();
+                },
+            });
+        } else {
+            this.moveMotherToPlayer();
+        }
     }
 
     private moveMotherToPlayer() {
@@ -748,14 +863,6 @@ export class GameScene extends Phaser.Scene {
         );
     }
 
-    private updateScore(delta: number) {
-        this.score += delta * 0.01;
-
-        const displayScore = Math.floor(this.score);
-
-        this.scoreText.setText(`점수 ${displayScore}`);
-    }
-
     private updateGameSpeed(delta: number) {
         this.gameSpeed += this.speedIncreaseRate * (delta / 1000);
 
@@ -816,7 +923,7 @@ export class GameScene extends Phaser.Scene {
         }
 
         if (pattern === 'middle') {
-            return this.groundTopY - 120;
+            return this.groundTopY - 100;
         }
 
         return this.groundTopY - 190;
