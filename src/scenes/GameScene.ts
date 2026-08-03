@@ -80,6 +80,13 @@ export class GameScene extends Phaser.Scene {
     private slideSound!: Phaser.Sound.BaseSound;
 
     private caughtImage!: Phaser.GameObjects.Image;
+    private dustEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+
+    private speedLines!: Phaser.GameObjects.Group;
+    private speedLineTimer?: Phaser.Time.TimerEvent;
+
+    private speedLineMinDelay = 140;
+    private speedLineMaxDelay = 320;
 
     constructor() {
         super('GameScene');
@@ -93,9 +100,13 @@ export class GameScene extends Phaser.Scene {
         this.bestScore = Number(localStorage.getItem('bestScore') ?? 0);
 
         this.createBackground();
+        this.createSpeedLines();
 
         this.createUI();
         this.createGround();
+
+        this.createDustParticleTexture();
+        this.createDustEmitter();
         //this.createGroundTiles();
         this.createPlayerAnimations();
         this.createMotherAnimations();
@@ -130,6 +141,8 @@ export class GameScene extends Phaser.Scene {
         this.createCollision();
         this.createInput();
 
+        this.createSpeedLineTimer();
+
         this.events.once(
             Phaser.Scenes.Events.SHUTDOWN,
             () => {
@@ -138,6 +151,8 @@ export class GameScene extends Phaser.Scene {
                 }
 
                 this.motherChaseTimer?.remove(false);
+                this.speedLineTimer?.remove(false);
+
                 this.tweens.killTweensOf(this.mother);
             }
         );
@@ -157,6 +172,70 @@ export class GameScene extends Phaser.Scene {
         this.moveGround(delta);
         this.checkPassedObstacles();
         this.removeOffscreenObstacles();
+    }
+
+    private createDustParticleTexture() {
+        if (this.textures.exists('dust-particle')) {
+            return;
+        }
+
+        const graphics = this.add.graphics();
+
+        graphics.fillStyle(0xd8c2a4, 1);
+        graphics.fillCircle(4, 4, 4);
+
+        graphics.generateTexture(
+            'dust-particle',
+            8,
+            8
+        );
+
+        graphics.destroy();
+    }
+
+    private createDustEmitter() {
+        this.dustEmitter = this.add.particles(
+            0,
+            0,
+            'dust-particle',
+            {
+                emitting: false,
+
+                lifespan: {
+                    min: 250,
+                    max: 450,
+                },
+
+                speedX: {
+                    min: -90,
+                    max: 90,
+                },
+
+                speedY: {
+                    min: -100,
+                    max: -35,
+                },
+
+                gravityY: 220,
+
+                scale: {
+                    start: 1,
+                    end: 0,
+                },
+
+                alpha: {
+                    start: 0.65,
+                    end: 0,
+                },
+
+                rotate: {
+                    min: 0,
+                    max: 360,
+                },
+            }
+        );
+
+        this.dustEmitter.setDepth(9);
     }
 
     private createUI() {
@@ -342,6 +421,8 @@ export class GameScene extends Phaser.Scene {
             );
 
             this.setPlayerBodyStanding();
+
+            this.playLandingEffect();
         }
 
         if (!this.player.anims.isPlaying) {
@@ -349,6 +430,39 @@ export class GameScene extends Phaser.Scene {
         }
 
         this.wasOnGround = true;
+    }
+
+    private playLandingEffect() {
+        // 약한 카메라 흔들림
+        this.cameras.main.shake(
+            50,
+            0.003
+        );
+
+        // 플레이어 발밑에서 먼지 방출
+        this.dustEmitter.emitParticleAt(
+            this.player.x,
+            this.groundTopY - 10,
+            10
+        );
+
+        // 기존 착지 Tween 중복 방지
+        this.tweens.killTweensOf(this.player);
+
+        // 착지 순간 살짝 눌림
+        this.player.setScale(
+            this.playerNormalScaleX * 1.06,
+            this.playerNormalScaleY * 0.94
+        );
+
+        // 원래 크기로 복구
+        this.tweens.add({
+            targets: this.player,
+            scaleX: this.playerNormalScaleX,
+            scaleY: this.playerNormalScaleY,
+            duration: 120,
+            ease: 'Quad.Out',
+        });
     }
 
     private createInput() {
@@ -962,6 +1076,100 @@ export class GameScene extends Phaser.Scene {
         }
     }
 
+    private createSpeedLines() {
+        this.speedLines = this.add.group();
+    }
+
+    private createSpeedLineTimer() {
+        const speedRatio = Phaser.Math.Clamp(
+            (this.gameSpeed - 300) / 500,
+            0,
+            1
+        );
+
+        const delay = Phaser.Math.Linear(
+            this.speedLineMaxDelay,
+            this.speedLineMinDelay,
+            speedRatio
+        );
+
+        this.speedLineTimer = this.time.delayedCall(
+            delay,
+            () => {
+                if (this.isGameOver) {
+                    return;
+                }
+
+                this.spawnSpeedLine();
+                this.createSpeedLineTimer();
+            }
+        );
+    }
+
+    private spawnSpeedLine() {
+        const speedRatio = Phaser.Math.Clamp(
+            (this.gameSpeed - 300) / 500,
+            0,
+            1
+        );
+
+        // 초반에는 속도선이 너무 많이 나오지 않도록 제한
+        if (Math.random() > 0.25 + speedRatio * 0.65) {
+            return;
+        }
+
+        const lineWidth = Phaser.Math.Between(
+            50,
+            Math.round(100 + speedRatio * 120)
+        );
+
+        const lineHeight = Phaser.Math.Between(2, 4);
+
+        const lineY = Phaser.Math.Between(
+            90,
+            this.groundTopY - 40
+        );
+
+        const alpha = Phaser.Math.Linear(
+            0.08,
+            0.3,
+            speedRatio
+        );
+
+        const speedLine = this.add.rectangle(
+            GAME_WIDTH + lineWidth,
+            lineY,
+            lineWidth,
+            lineHeight,
+            0xffffff,
+            alpha
+        );
+
+        speedLine
+            .setOrigin(0, 0.5)
+            .setDepth(3);
+
+        this.speedLines.add(speedLine);
+
+        const duration = Phaser.Math.Linear(
+            650,
+            280,
+            speedRatio
+        );
+
+        this.tweens.add({
+            targets: speedLine,
+            x: -lineWidth,
+            alpha: 0,
+            duration,
+            ease: 'Linear',
+
+            onComplete: () => {
+                speedLine.destroy();
+            },
+        });
+    }
+
     private moveBackgrounds(delta: number) {
         const moveDistance = this.gameSpeed * this.backgroundSpeedRatio * delta / 1000;
 
@@ -1017,23 +1225,100 @@ export class GameScene extends Phaser.Scene {
         });
     }
 
+    private showMotherWarningEffect() {
+        const warningOverlay = this.add.rectangle(
+            GAME_WIDTH / 2,
+            GAME_HEIGHT / 2,
+            GAME_WIDTH,
+            GAME_HEIGHT,
+            0xff0000,
+            0
+        )
+            .setDepth(50);
+
+        const warningText = this.add.text(
+            GAME_WIDTH / 2,
+            GAME_HEIGHT / 2 - 60,
+            '⚠ 엄마 등장!',
+            {
+                fontSize: '42px',
+                color: '#ffffff',
+                fontStyle: 'bold',
+                stroke: '#7f0000',
+                strokeThickness: 6,
+            }
+        )
+            .setOrigin(0.5)
+            .setDepth(51)
+            .setAlpha(0)
+            .setScale(0.8);
+
+        this.cameras.main.shake(250, 0.006);
+
+        this.tweens.add({
+            targets: warningOverlay,
+            alpha: 0.22,
+            duration: 120,
+            yoyo: true,
+            repeat: 1,
+
+            onComplete: () => {
+                warningOverlay.destroy();
+            },
+        });
+
+        this.tweens.add({
+            targets: warningText,
+            alpha: 1,
+            scaleX: 1,
+            scaleY: 1,
+            duration: 180,
+            ease: 'Back.Out',
+
+            onComplete: () => {
+                this.time.delayedCall(450, () => {
+                    this.tweens.add({
+                        targets: warningText,
+                        alpha: 0,
+                        y: warningText.y - 20,
+                        duration: 250,
+                        ease: 'Quad.In',
+
+                        onComplete: () => {
+                            warningText.destroy();
+                        },
+                    });
+                });
+            },
+        });
+    }
+
     private startMotherChase() {
         this.isMotherChasing = true;
 
-        this.mother.setVisible(true);
-        this.mother.play('mother-run');
-        this.mother.setAlpha(1);
+        this.showMotherWarningEffect();
 
+        this.mother.setVisible(true);
+        this.mother.setAlpha(1);
         this.mother.x = -40;
 
-        this.tweens.add({
-            targets: this.mother,
-            x: 35,
-            duration: 350,
-            ease: 'Back.Out',
-        });
-
         this.motherChaseTimer?.remove(false);
+
+        // 경고가 먼저 나온 뒤 엄마 등장
+        this.time.delayedCall(450, () => {
+            if (this.isGameOver) {
+                return;
+            }
+
+            this.mother.play('mother-run', true);
+
+            this.tweens.add({
+                targets: this.mother,
+                x: 35,
+                duration: 350,
+                ease: 'Back.Out',
+            });
+        });
 
         this.motherChaseTimer = this.time.delayedCall(
             this.motherChaseDuration,
