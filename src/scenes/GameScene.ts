@@ -88,12 +88,16 @@ export class GameScene extends Phaser.Scene {
     private speedLineMinDelay = 140;
     private speedLineMaxDelay = 320;
 
+    private combo = 0;
+    private comboText!: Phaser.GameObjects.Text;
+
     constructor() {
         super('GameScene');
     }
 
     create() {
         this.score = 0;
+        this.combo = 0;
         this.isGameOver = false;
         this.isMotherChasing = false;
         this.isHitCooldown = false;
@@ -260,6 +264,23 @@ export class GameScene extends Phaser.Scene {
                 color: '#aaaaaa',
             }
         ).setOrigin(0.5);
+        
+        this.comboText = this.add.text(
+            GAME_WIDTH / 2,
+            70,
+            '',
+            {
+                fontSize: '26px',
+                color: '#ffd36a',
+                fontFamily: 'Arial',
+                fontStyle: 'bold',
+                stroke: '#000000',
+                strokeThickness: 4,
+            }
+        )
+            .setOrigin(0.5)
+            .setDepth(20)
+            .setVisible(false);
 
         this.speedText.setVisible(false);
     }
@@ -433,12 +454,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     private playLandingEffect() {
-        // 약한 카메라 흔들림
-        this.cameras.main.shake(
-            50,
-            0.003
-        );
-
         // 플레이어 발밑에서 먼지 방출
         this.dustEmitter.emitParticleAt(
             this.player.x,
@@ -496,6 +511,8 @@ export class GameScene extends Phaser.Scene {
 
         this.isHitCooldown = true;
 
+        this.resetCombo();
+
         // 같은 장애물과 여러 프레임 연속 충돌하는 것을 방지
         obstacle.destroy();
 
@@ -516,6 +533,18 @@ export class GameScene extends Phaser.Scene {
                 }
             }
         );
+    }
+
+    private resetCombo() {
+        this.combo = 0;
+
+        this.tweens.killTweensOf(this.comboText);
+
+        this.comboText
+            .setVisible(false)
+            .setText('')
+            .setAlpha(1)
+            .setScale(1);
     }
 
     private handleJump() {
@@ -691,7 +720,13 @@ export class GameScene extends Phaser.Scene {
         ) as Phaser.Physics.Arcade.Sprite;
 
         obstacle.setOrigin(0.5, 1);
-        obstacle.setDisplaySize(this.obstacleWidth, this.obstacleHeight);
+        obstacle.setDisplaySize(
+            this.obstacleWidth,
+            this.obstacleHeight
+        );
+
+        obstacle.setAlpha(0);
+
         obstacle.setVelocityX(-this.gameSpeed);
         obstacle.setDepth(5);
 
@@ -706,6 +741,13 @@ export class GameScene extends Phaser.Scene {
         );
 
         obstacle.setData('passed', false);
+
+        this.tweens.add({
+            targets: obstacle,
+            alpha: 1,
+            duration: 120,
+            ease: 'Linear',
+        });
     }
 
     private spawnSlipperObstacle() {
@@ -724,6 +766,8 @@ export class GameScene extends Phaser.Scene {
             this.slipperHeight
         );
 
+        obstacle.setAlpha(0);
+
         obstacle.setVelocityX(-this.gameSpeed);
         obstacle.setDepth(5);
 
@@ -738,6 +782,13 @@ export class GameScene extends Phaser.Scene {
         );
 
         obstacle.setData('passed', false);
+
+        this.tweens.add({
+            targets: obstacle,
+            alpha: 1,
+            duration: 120,
+            ease: 'Linear',
+        });
     }
 
     private removeOffscreenObstacles() {
@@ -778,8 +829,15 @@ export class GameScene extends Phaser.Scene {
                 ) {
                     obstacle.setData('passed', true);
 
-                    const scoreGain =
-                        Math.round(this.gameSpeed / 30);
+                    this.combo += 1;
+
+                    const speedScore = Math.round(this.gameSpeed / 30);
+                    const comboBonus = Math.min(
+                        (this.combo - 1) * 2,
+                        20
+                    );
+
+                    const scoreGain = speedScore + comboBonus;
 
                     this.score += scoreGain;
 
@@ -788,6 +846,7 @@ export class GameScene extends Phaser.Scene {
                     );
 
                     this.showPassScoreEffect(scoreGain);
+                    this.showComboEffect();
                 }
             }
         );
@@ -824,6 +883,29 @@ export class GameScene extends Phaser.Scene {
             onComplete: () => {
                 effectText.destroy();
             },
+        });
+    }
+
+    private showComboEffect() {
+        if (this.combo < 2) {
+            this.comboText.setVisible(false);
+            return;
+        }
+
+        this.comboText
+            .setText(`${this.combo} COMBO`)
+            .setVisible(true)
+            .setAlpha(1)
+            .setScale(1.25);
+
+        this.tweens.killTweensOf(this.comboText);
+
+        this.tweens.add({
+            targets: this.comboText,
+            scaleX: 1,
+            scaleY: 1,
+            duration: 180,
+            ease: 'Back.Out',
         });
     }
 
